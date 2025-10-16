@@ -40,6 +40,7 @@ bool DMMotorController::readFeedback(MotorFeedback &feedback) {
   if (_can->available() > 0) {
     CanMsg rxMsg = _can->read();
     if (rxMsg.id == 0x000) {
+      feedback.status = rxMsg.data[0];
       uint16_t pos_raw = (uint16_t)(rxMsg.data[1] << 8 | rxMsg.data[2]);
       uint16_t vel_raw = (uint16_t)((rxMsg.data[3] << 4) | (rxMsg.data[4] >> 4));
       uint16_t tor_raw = (uint16_t)(((rxMsg.data[4] & 0x0F) << 8) | rxMsg.data[5]);

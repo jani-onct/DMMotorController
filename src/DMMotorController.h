@@ -10,6 +10,7 @@ struct MotorFeedback {
   float torque_nm;
   int8_t temp_mos;
   int8_t temp_rotor;
+  uint8_t status;
 };
 
 class DMMotorController {
@@ -17,6 +18,7 @@ public:
   DMMotorController(byte slaveId, RP2040PIO_CAN &can);
 
   void begin();
+  void enableMotor();
 
   enum ControlMode {
     MIT = 1,      
@@ -36,7 +38,7 @@ public:
 
 private:
 
-  void enableMotor();
+  // void enableMotor();
   void switchControlMode(uint8_t mode_code);
   void sendVelocityCommand(float velocity_rad_s);
   void sendPositionCommand(float position_rad, float velocity_limit_rad_s);
