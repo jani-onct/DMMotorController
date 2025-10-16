@@ -1,0 +1,20 @@
+# Arduino Keywords File
+
+# Class names
+DMMotorController	KEYWORD1
+MotorFeedback	KEYWORD2
+
+# Method names
+begin	KEYWORD2
+setMode	KEYWORD2
+getMode	KEYWORD2
+goToPosition	KEYWORD2
+setVelocityRPM	KEYWORD2
+setMIT	KEYWORD2
+playStartupBeep	KEYWORD2
+readFeedback	KEYWORD2
+
+# Enum literals
+MIT	LITERAL1
+POSITION	LITERAL1
+VELOCITY	LITERAL1
