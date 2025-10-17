@@ -1,11 +1,11 @@
 #include <RP2040PIO_CAN.h>
-#include <DMMotorController.h>  // ""でライブラリをインクルード
+#include <DMMotorController.h>
 
-// 以下の変数の値を変更して、動作モードを選択します
 // 1: MITモード
 // 2: 位置制御モード
 // 3: 速度制御モード
-const int CONTROL_MODE = 1;
+const int CONTROL_MODE = 3;
+const int DELAY_AFTER_STARTUP_MS = 2000;
 
 // --- CAN設定 ---
 const uint8_t CAN_TX_PIN = 0;
@@ -26,8 +26,7 @@ unsigned long stepTimer = 0;
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial)
-    ;
+  while (!Serial);
   Serial.println("--- DMMotorController Library Demo ---");
 
   CAN.setTX(CAN_TX_PIN);
@@ -36,34 +35,29 @@ void setup() {
     Serial.println("CAN bus initialized.");
   } else {
     Serial.println("CAN bus initialization failed!");
-    while (1)
-      ;
+    while (1);
   }
 
-  while (true) {
-    motor.enableMotor();  
-    delay(100);           
-
-  MotorFeedback feedback;
-
-    if (motor.readFeedback(feedback)) {
-      if ((feedback.status >> 4) == 1) {
-        Serial.println("Motor enabled successfully.");
-        break;  
-      }
-    }
-    Serial.print(".");  
+  // --- 起動処理 ---
+  Serial.print("Waiting for motor to be enabled...");
+  while (!motor.isEnabled()) {
+    motor.enableMotor(); 
+    motor.update();      
+    Serial.print(".");
+    delay(100);
   }
 
+  Serial.println("\nMotor enabled. Playing startup sound.");
   motor.playStartupBeep(2000, 100);
-  delay(50);
-  motor.playStartupBeep(4000, 100);
+  
+  Serial.print("Waiting for ");
+  Serial.print(DELAY_AFTER_STARTUP_MS);
+  Serial.println(" ms before starting operation...");
+  delay(DELAY_AFTER_STARTUP_MS); 
 
   motor.setMode((DMMotorController::ControlMode)CONTROL_MODE);
   Serial.print("Initial mode set to: ");
   Serial.println(CONTROL_MODE);
-
-  delay(500);
   Serial.println("Operation started.");
 
   stepTimer = millis();
@@ -71,61 +65,65 @@ void setup() {
 }
 
 void loop() {
-  // CONTROL_MODEの値に応じて指令を送信
-  switch (CONTROL_MODE) {
-    case 1:  // ① MITモード
-      if (motionStep == 1) {
-        motor.setMIT(0.0f, 0.0f, MIT_KP, MIT_KD, 0.0f);  // 0度
-        if (millis() - stepTimer > 2000) {
-          motionStep = 2;  // 次のステップへ
-          stepTimer = millis();
-        }
-      } else if (motionStep == 2) {
-        motor.setMIT(1.57f, 0.0f, MIT_KP, MIT_KD, 0.0f);  // 90度
-        if (millis() - stepTimer > 2000) {
-          motionStep = 3;  // 次のステップへ
-          stepTimer = millis();
-        }
-      } else if (motionStep == 3) {
-        motor.setMIT(-1.57f, 0.0f, MIT_KP, MIT_KD, 0.0f);  // -90度で停止
-      }
-      break;
+  motor.update();
 
-    case 2:  // ② 位置制御モード
-      if (motionStep == 1) {
-        motor.goToPosition(0.0f, VELOCITY_LIMIT_RPM);  // 0度
-        if (millis() - stepTimer > 2000) {
-          motionStep = 2;  // 次のステップへ
-          stepTimer = millis();
+  if (motor.isEnabled()) {
+    switch (CONTROL_MODE) {
+      case 1: 
+        if (motionStep == 1) {
+          motor.setMIT(0.0f, 0.0f, MIT_KP, MIT_KD, 0.0f);
+          if (millis() - stepTimer > 2000) {
+            motionStep = 2;
+            stepTimer = millis();
+          }
+        } else if (motionStep == 2) {
+          motor.setMIT(1.57f, 0.0f, MIT_KP, MIT_KD, 0.0f);
+          if (millis() - stepTimer > 2000) {
+            motionStep = 3;
+            stepTimer = millis();
+          }
+        } else if (motionStep == 3) {
+          motor.setMIT(-1.57f, 0.0f, MIT_KP, MIT_KD, 0.0f); 
         }
-      } else if (motionStep == 2) {
-        motor.goToPosition(1.57f, VELOCITY_LIMIT_RPM);  // 90度
-        if (millis() - stepTimer > 2000) {
-          motionStep = 3;  // 次のステップへ
-          stepTimer = millis();
+        break;
+
+      case 2: 
+        if (motionStep == 1) {
+          motor.goToPosition(0.0f, VELOCITY_LIMIT_RPM);  // 0度
+          if (millis() - stepTimer > 2000) {
+            motionStep = 2; 
+            stepTimer = millis();
+          }
+        } else if (motionStep == 2) {
+          motor.goToPosition(1.57f, VELOCITY_LIMIT_RPM);  // 90度
+          if (millis() - stepTimer > 2000) {
+            motionStep = 3; 
+            stepTimer = millis();
+          }
+        } else if (motionStep == 3) {
+          motor.goToPosition(1.57f, VELOCITY_LIMIT_RPM);  // 90度で停止
         }
-      } else if (motionStep == 3) {
-        motor.goToPosition(1.57f, VELOCITY_LIMIT_RPM);  // 90度で停止
-      }
-      break;
+        break;
 
-    case 3:  // ③ 速度制御モード
-      motor.setVelocityRPM(60.0f);
-      break;
-  }
+      case 3: 
+        motor.setVelocityRPM(60.0f);
+        break;
+    }
 
-  // フィードバックデータを読み込んで表示
-  MotorFeedback feedback;
-  if (motor.readFeedback(feedback)) {
-    Serial.print("Step: ");
-    Serial.print(motionStep);
-    Serial.print(", Pos: ");
-    Serial.print(feedback.position_deg, 2);
-    Serial.print(" deg, Vel: ");
-    Serial.print(feedback.velocity_rpm, 2);
-    Serial.print(" RPM, Torque: ");
-    Serial.print(feedback.torque_nm, 3);
-    Serial.println(" Nm");
+    MotorFeedback feedback;
+    if (motor.readFeedback(feedback)) {
+      Serial.print("Step: ");
+      Serial.print(motionStep);
+      Serial.print(", Pos: ");
+      Serial.print(feedback.position_deg, 2);
+      Serial.print(" deg, Vel: ");
+      Serial.print(feedback.velocity_rpm, 2);
+      Serial.print(" RPM, Torque: ");
+      Serial.print(feedback.torque_nm, 3);
+      Serial.println(" Nm");
+    }
+  } else {
+    motor.enableMotor();
   }
 
   delay(1);

@@ -34,11 +34,14 @@ public:
 
   void playStartupBeep(int frequency, int duration_ms);
 
+  bool waitForMotor();
+
   bool readFeedback(MotorFeedback &feedback);
+  void update();
+  bool isEnabled();
 
 private:
 
-  // void enableMotor();
   void switchControlMode(uint8_t mode_code);
   void sendVelocityCommand(float velocity_rad_s);
   void sendPositionCommand(float position_rad, float velocity_limit_rad_s);
@@ -50,6 +53,8 @@ private:
   RP2040PIO_CAN* _can;
   byte _slaveId;
   ControlMode _currentMode;
+
+  bool _isMotorEnabled;
 
   static const float P_MAX;
   static const float V_MAX;

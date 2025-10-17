@@ -7,7 +7,7 @@ const float DMMotorController::KP_MAX = 500.0f;
 const float DMMotorController::KD_MAX = 5.0f;
 
 DMMotorController::DMMotorController(byte slaveId, RP2040PIO_CAN &can)
-  : _slaveId(slaveId), _can(&can), _currentMode(MIT) {} // 初期モードをMITに設定
+  : _slaveId(slaveId), _can(&can), _currentMode(MIT), _isMotorEnabled(false) {}
 
 void DMMotorController::begin() {
   enableMotor();
@@ -19,7 +19,7 @@ void DMMotorController::setMode(ControlMode mode) {
 }
 
 DMMotorController::ControlMode DMMotorController::getMode() {
-    return _currentMode;
+  return _currentMode;
 }
 
 void DMMotorController::goToPosition(float target_rad, float speed_rpm) {
@@ -36,10 +36,53 @@ void DMMotorController::setMIT(float p_des, float v_des, float kp, float kd, flo
   sendMITCommand(p_des, v_des, kp, kd, t_ff);
 }
 
+bool DMMotorController::waitForMotor() {
+  enableMotor();
+
+  update();
+
+  if (_isMotorEnabled) {
+    playStartupBeep(2000, 100);
+    delay(50);
+    playStartupBeep(4000, 100);
+    return true; // 起動成功
+  }
+
+  return false; 
+}
+void DMMotorController::update() {
+  MotorFeedback feedback;
+  bool received = readFeedback(feedback);
+
+  if (received) {
+    bool motorIsCurrentlyEnabled = ((feedback.status >> 4) == 1);
+
+    if (motorIsCurrentlyEnabled && !_isMotorEnabled) {
+      _isMotorEnabled = true;
+      Serial.println("\nMotor enabled successfully.");
+    } else if (!motorIsCurrentlyEnabled && _isMotorEnabled) {
+      _isMotorEnabled = false;
+      Serial.println("\nMotor reported being disabled.");
+    }
+  } else {
+    if (_isMotorEnabled) {
+      _isMotorEnabled = false;
+      Serial.println("\nMotor disabled or disconnected."); 
+    }
+  }
+}
+
+bool DMMotorController::isEnabled() {
+  return _isMotorEnabled;
+}
+
 bool DMMotorController::readFeedback(MotorFeedback &feedback) {
   if (_can->available() > 0) {
     CanMsg rxMsg = _can->read();
-    if (rxMsg.id == 0x000) {
+    if (rxMsg.id == 0x000) { 
+      uint8_t motor_id_from_feedback = rxMsg.data[0] & 0x0F;
+      if (motor_id_from_feedback != _slaveId) return false; 
+
       feedback.status = rxMsg.data[0];
       uint16_t pos_raw = (uint16_t)(rxMsg.data[1] << 8 | rxMsg.data[2]);
       uint16_t vel_raw = (uint16_t)((rxMsg.data[3] << 4) | (rxMsg.data[4] >> 4));
@@ -64,7 +107,7 @@ void DMMotorController::playStartupBeep(int frequency, int duration_ms) {
   long iterations = (long)duration_ms * 1000 / period_us;
 
   uint8_t original_mode = _currentMode;
-  switchControlMode(3); 
+  switchControlMode(3);
   delay(10);
 
   for (long i = 0; i < iterations; i++) {
@@ -106,9 +149,12 @@ void DMMotorController::switchControlMode(uint8_t mode_code) {
 
 void DMMotorController::sendVelocityCommand(float velocity_rad_s) {
   CanMsg txMsg = {};
-  union { float f; byte b[4]; } converter;
+  union {
+    float f;
+    byte b[4];
+  } converter;
   converter.f = velocity_rad_s;
-  
+
   txMsg.id = 0x200 + _slaveId;
   txMsg.data_length = 8;
   for (int i = 0; i < 4; i++) { txMsg.data[i] = converter.b[i]; }
@@ -118,14 +164,17 @@ void DMMotorController::sendVelocityCommand(float velocity_rad_s) {
 
 void DMMotorController::sendPositionCommand(float position_rad, float velocity_limit_rad_s) {
   CanMsg txMsg = {};
-  union { float f; byte b[4]; } pos_conv, vel_conv;
+  union {
+    float f;
+    byte b[4];
+  } pos_conv, vel_conv;
   pos_conv.f = position_rad;
   vel_conv.f = velocity_limit_rad_s;
 
   txMsg.id = 0x100 + _slaveId;
   txMsg.data_length = 8;
   for (int i = 0; i < 4; i++) { txMsg.data[i] = pos_conv.b[i]; }
-  for (int i = 0; i < 4; i++) { txMsg.data[i+4] = vel_conv.b[i]; }
+  for (int i = 0; i < 4; i++) { txMsg.data[i + 4] = vel_conv.b[i]; }
   _can->write(txMsg);
 }
 
@@ -133,7 +182,7 @@ void DMMotorController::sendMITCommand(float p_des, float v_des, float kp, float
   CanMsg txMsg = {};
   txMsg.id = _slaveId;
   txMsg.data_length = 8;
-  
+
   uint16_t p_uint = float_to_uint(p_des, -P_MAX, P_MAX, 16);
   uint16_t v_uint = float_to_uint(v_des, -V_MAX, V_MAX, 12);
   uint16_t kp_uint = float_to_uint(kp, 0, KP_MAX, 12);
